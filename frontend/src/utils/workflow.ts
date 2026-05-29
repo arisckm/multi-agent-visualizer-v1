@@ -55,6 +55,33 @@ export function validateWorkflowLocally(nodes: Node<AgentNodeData>[], edges: Edg
   return errors;
 }
 
+export const DEFAULT_TEMPLATE = {
+  nodes: [
+    {
+      id: "1",
+      type: "agent" as const,
+      data: { label: "Planner", prompt: "Plan work", role: "planner" as const, status: "idle" as const },
+      position: { x: 80, y: 140 },
+    },
+    {
+      id: "2",
+      type: "agent" as const,
+      data: { label: "Researcher", prompt: "Gather context", role: "researcher" as const, status: "idle" as const },
+      position: { x: 380, y: 60 },
+    },
+    {
+      id: "3",
+      type: "agent" as const,
+      data: { label: "Builder", prompt: "Implement output", role: "builder" as const, status: "idle" as const },
+      position: { x: 380, y: 220 },
+    },
+  ],
+  edges: [
+    { id: "e1-2", source: "1", target: "2", animated: true },
+    { id: "e1-3", source: "1", target: "3", animated: true },
+  ],
+};
+
 export function simulateLocally(nodes: Node<AgentNodeData>[]): { durationMs: number; events: RunEvent[] } {
   const events = nodes.map((node, index) => ({
     nodeId: node.id,

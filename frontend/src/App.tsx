@@ -20,6 +20,7 @@ import { RunTimeline } from "./components/RunTimeline";
 import { AGENT_TYPES, type AgentTypeDef } from "./constants/agentTypes";
 import {
   buildApiPayload,
+  DEFAULT_TEMPLATE,
   simulateLocally,
   validateWorkflowLocally,
   type RunEvent,
@@ -177,88 +178,66 @@ function App() {
     [updateNodeStatuses],
   );
 
-  const simulateRun = async () => {
+  const simulateRun = () => {
     const localErrors = validateWorkflowLocally(nodes, edges);
     if (localErrors.length > 0) {
       alert(localErrors.join("\n\n"));
       return;
     }
 
-    const { nodes: payloadNodes, edges: payloadEdges, validEdges } = buildApiPayload(nodes, edges);
+    const { validEdges } = buildApiPayload(nodes, edges);
     if (validEdges.length < edges.length) {
       setEdges(validEdges);
     }
 
-    const payload = { nodes: payloadNodes, edges: payloadEdges };
-
-    try {
-      const validation = await fetch(`${apiBase}/workflows/validate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!validation.ok) {
-        const body = (await validation.json().catch(() => null)) as { errors?: string[] } | null;
-        const apiErrors = body?.errors?.join("\n");
-        if (apiErrors) {
-          alert(apiErrors);
-          return;
-        }
-        // API unreachable — run simulation in the browser
-        console.warn("API validation failed, using local simulation.", validation.status);
-        startRun(simulateLocally(nodes));
-        return;
-      }
-
-      const runResponse = await fetch(`${apiBase}/runs/simulate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!runResponse.ok) {
-        console.warn("API simulate failed, using local simulation.", runResponse.status);
-        startRun(simulateLocally(nodes));
-        return;
-      }
-
-      const run = (await runResponse.json()) as { durationMs: number; events: RunEvent[] };
-      startRun(run);
-    } catch (error) {
-      console.warn("API unreachable, using local simulation.", error);
-      startRun(simulateLocally(nodes));
-    }
+    // Run simulation in the browser (works without backend / Vercel API)
+    startRun(simulateLocally(nodes));
   };
 
-  const loadTemplate = async () => {
-    const response = await fetch(`${apiBase}/templates/workflow`);
-    if (!response.ok) return;
-    const template = (await response.json()) as {
-      nodes: Array<{ id: string; data: { label: string; prompt?: string }; position: { x: number; y: number } }>;
+  const applyTemplate = useCallback(
+    (template: {
+      nodes: Array<{
+        id: string;
+        position: { x: number; y: number };
+        data: { label: string; prompt?: string; role?: AgentNodeData["role"] };
+      }>;
       edges: Edge[];
-    };
+    }) => {
+      const roleFromLabel = (label: string): AgentNodeData["role"] => {
+        const match = AGENT_TYPES.find((t) => t.label.toLowerCase() === label.toLowerCase());
+        return match?.role ?? "custom";
+      };
 
-    const roleFromLabel = (label: string): AgentNodeData["role"] => {
-      const match = AGENT_TYPES.find((t) => t.label.toLowerCase() === label.toLowerCase());
-      return match?.role ?? "custom";
-    };
+      setNodes(
+        template.nodes.map((n) => ({
+          id: n.id,
+          type: "agent",
+          position: n.position,
+          data: {
+            label: n.data.label,
+            prompt: n.data.prompt ?? "",
+            role: n.data.role ?? roleFromLabel(n.data.label),
+            status: "idle" as const,
+          },
+        })),
+      );
+      setEdges(template.edges.map((e) => ({ ...e, animated: true })));
+      resetRunState();
+    },
+    [resetRunState, setNodes, setEdges],
+  );
 
-    setNodes(
-      template.nodes.map((n) => ({
-        id: n.id,
-        type: "agent",
-        position: n.position,
-        data: {
-          label: n.data.label,
-          prompt: n.data.prompt ?? "",
-          role: roleFromLabel(n.data.label),
-          status: "idle" as const,
-        },
-      })),
-    );
-    setEdges(template.edges.map((e) => ({ ...e, animated: true })));
-    resetRunState();
+  const loadTemplate = async () => {
+    try {
+      const response = await fetch(`${apiBase}/templates/workflow`);
+      if (response.ok) {
+        applyTemplate((await response.json()) as Parameters<typeof applyTemplate>[0]);
+        return;
+      }
+    } catch {
+      // use built-in template
+    }
+    applyTemplate(DEFAULT_TEMPLATE);
   };
 
   const saveWorkflow = () => {
