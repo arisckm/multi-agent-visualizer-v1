@@ -65,10 +65,12 @@ function App() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const intervalRef = useRef<number | null>(null);
 
-  const apiBase = useMemo(
-    () => import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000/api",
-    [],
-  );
+  const apiBase = useMemo(() => {
+    const fromEnv = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
+    if (fromEnv) return fromEnv;
+    if (import.meta.env.PROD) return "/api";
+    return "http://localhost:4000/api";
+  }, []);
 
   const selectedNode = useMemo(
     () => (selectedNodeId ? (nodes.find((n) => n.id === selectedNodeId) as Node<AgentNodeData> | undefined) ?? null : null),

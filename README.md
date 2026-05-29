@@ -114,22 +114,20 @@ Optional: copy `frontend/.env.example` to `frontend/.env` and set `VITE_API_URL`
 
 ---
 
-## Deploy
+## Deploy (all on Vercel — recommended)
 
-### Frontend (Vercel)
+1. Import [arisckm/multi-agent-visualizer-v1](https://github.com/arisckm/multi-agent-visualizer-v1) on [Vercel](https://vercel.com/new)
+2. Leave **Root Directory** empty (repo root)
+3. Set **Framework Preset** to **Services** (Vercel detects `frontend` + `backend` from `vercel.json`)
+4. Click **Deploy** — no Render or credit card needed
+5. **Do not** set `VITE_API_URL` unless you use a separate API host (production defaults to `/api` on the same domain)
 
-1. Import [arisckm/multi-agent-visualizer-v1](https://github.com/arisckm/multi-agent-visualizer-v1)
-2. Set **Root Directory** to `frontend`
-3. Add environment variable:
-   - `VITE_API_URL` = `https://your-api.onrender.com/api`
+After deploy, test: `https://YOUR-APP.vercel.app/api/health` → `{"ok":true}`
 
-### Backend (Render)
+### Alternative: Frontend on Vercel + Backend on Render
 
-1. New **Web Service** → connect this repo
-2. **Root Directory:** `backend`
-3. **Build:** `npm install && npm run build`
-4. **Start:** `npm start`
-5. Set `FRONTEND_URL` to your Vercel URL (for CORS)
+1. Vercel: Root Directory = `frontend`, env `VITE_API_URL=https://your-api.onrender.com/api`
+2. Render: Root Directory = `backend`, env `FRONTEND_URL=https://your-app.vercel.app`
 
 ---
 
