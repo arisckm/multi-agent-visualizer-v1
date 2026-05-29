@@ -9,9 +9,9 @@ const positionSchema = z.object({
 
 const nodeSchema = z.object({
   id: z.string(),
-  type: z.string().default("agent"),
+  type: z.string().optional(),
   data: z.object({
-    label: z.string().min(1),
+    label: z.string().trim().min(1, "Each agent needs a display name"),
     prompt: z.string().optional().default(""),
   }),
   position: positionSchema,
@@ -22,6 +22,9 @@ const edgeSchema = z.object({
   source: z.string(),
   target: z.string(),
   animated: z.boolean().optional(),
+  type: z.string().optional(),
+  sourceHandle: z.string().nullable().optional(),
+  targetHandle: z.string().nullable().optional(),
 });
 
 const workflowSchema = z.object({
@@ -96,7 +99,12 @@ export function createApp(): Express {
     }
 
     if (missingEdgeLinks.length > 0) {
-      return res.status(400).json({ valid: false, errors: ["Some edges reference missing nodes"] });
+      return res.status(400).json({
+        valid: false,
+        errors: [
+          `${missingEdgeLinks.length} connection(s) point to deleted agents. Remove broken lines or reconnect them.`,
+        ],
+      });
     }
 
     return res.json({ valid: true, errors: [] });

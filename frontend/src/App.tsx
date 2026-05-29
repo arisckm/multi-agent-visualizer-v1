@@ -18,13 +18,12 @@ import { NodePalette } from "./components/NodePalette";
 import { PropertiesPanel } from "./components/PropertiesPanel";
 import { RunTimeline } from "./components/RunTimeline";
 import { AGENT_TYPES, type AgentTypeDef } from "./constants/agentTypes";
-
-type RunEvent = {
-  nodeId: string;
-  label: string;
-  startedAtMs: number;
-  completedAtMs: number;
-};
+import {
+  buildApiPayload,
+  simulateLocally,
+  validateWorkflowLocally,
+  type RunEvent,
+} from "./utils/workflow";
 
 const nodeTypes = { agent: AgentNode };
 
@@ -155,57 +154,81 @@ function App() {
     setNodes((prev) => prev.map((n) => ({ ...n, data: { ...n.data, status: "idle" as const } })));
   }, [setNodes]);
 
+  const startRun = useCallback(
+    (run: { durationMs: number; events: RunEvent[] }) => {
+      setEvents(run.events);
+      setElapsedMs(0);
+      setIsRunning(true);
+      updateNodeStatuses(0, run.events);
+
+      if (intervalRef.current) window.clearInterval(intervalRef.current);
+
+      const started = Date.now();
+      intervalRef.current = window.setInterval(() => {
+        const ms = Date.now() - started;
+        setElapsedMs(ms);
+        updateNodeStatuses(ms, run.events);
+        if (ms >= run.durationMs) {
+          setIsRunning(false);
+          if (intervalRef.current) window.clearInterval(intervalRef.current);
+        }
+      }, 100);
+    },
+    [updateNodeStatuses],
+  );
+
   const simulateRun = async () => {
-    const payload = {
-      nodes: nodes.map((n) => ({
-        id: n.id,
-        type: "agent",
-        data: { label: n.data.label, prompt: n.data.prompt },
-        position: n.position,
-      })),
-      edges,
-    };
-
-    const validation = await fetch(`${apiBase}/workflows/validate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!validation.ok) {
-      alert("Workflow is invalid. Add at least one agent and connect edges correctly.");
+    const localErrors = validateWorkflowLocally(nodes, edges);
+    if (localErrors.length > 0) {
+      alert(localErrors.join("\n\n"));
       return;
     }
 
-    const runResponse = await fetch(`${apiBase}/runs/simulate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!runResponse.ok) {
-      alert("Could not start simulated run.");
-      return;
+    const { nodes: payloadNodes, edges: payloadEdges, validEdges } = buildApiPayload(nodes, edges);
+    if (validEdges.length < edges.length) {
+      setEdges(validEdges);
     }
 
-    const run = (await runResponse.json()) as { durationMs: number; events: RunEvent[] };
-    setEvents(run.events);
-    setElapsedMs(0);
-    setIsRunning(true);
-    updateNodeStatuses(0, run.events);
+    const payload = { nodes: payloadNodes, edges: payloadEdges };
 
-    if (intervalRef.current) window.clearInterval(intervalRef.current);
+    try {
+      const validation = await fetch(`${apiBase}/workflows/validate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    const started = Date.now();
-    intervalRef.current = window.setInterval(() => {
-      const ms = Date.now() - started;
-      setElapsedMs(ms);
-      updateNodeStatuses(ms, run.events);
-      if (ms >= run.durationMs) {
-        setIsRunning(false);
-        if (intervalRef.current) window.clearInterval(intervalRef.current);
+      if (!validation.ok) {
+        const body = (await validation.json().catch(() => null)) as { errors?: string[] } | null;
+        const apiErrors = body?.errors?.join("\n");
+        if (apiErrors) {
+          alert(apiErrors);
+          return;
+        }
+        // API unreachable — run simulation in the browser
+        console.warn("API validation failed, using local simulation.", validation.status);
+        startRun(simulateLocally(nodes));
+        return;
       }
-    }, 100);
+
+      const runResponse = await fetch(`${apiBase}/runs/simulate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!runResponse.ok) {
+        console.warn("API simulate failed, using local simulation.", runResponse.status);
+        startRun(simulateLocally(nodes));
+        return;
+      }
+
+      const run = (await runResponse.json()) as { durationMs: number; events: RunEvent[] };
+      startRun(run);
+    } catch (error) {
+      console.warn("API unreachable, using local simulation.", error);
+      startRun(simulateLocally(nodes));
+    }
   };
 
   const loadTemplate = async () => {
